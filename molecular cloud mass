@@ -1,0 +1,151 @@
+import astropy.units as u
+import astropy.constants
+from astropy.constants import h, k_B
+import numpy as np
+import math
+
+#it's important to import all the libraries you know of, just in case.
+#Also i have been programming for like a month now and in my 1.5 weeks of using libraries, I have never, EVER...
+#run into a problem caused by importing too many libraries. Life is good.
+
+d = 250 * u.pc
+Tex = 25 * u.K
+
+cen_ra = 52.25 * u.deg
+cen_dec = 0.25 * u.deg
+cen_v = 15 * u.km/u.s
+
+sig_ra = 3 * u.arcmin
+sig_dec = 4 * u.arcmin
+sig_v = 3 * u.km/u.s
+
+ra = np.linspace(52, 52.5, 100) * u.deg
+dec = np.linspace(0, 0.5, 100) * u.deg
+v = np.linspace(0, 30, 300) *u.km/u.s
+
+ra_cube, dec_cube, v_cube = np.meshgrid(ra, dec, v)
+
+data_gauss = np.exp(-0.5*((ra_cube-cen_ra)/sig_ra)**2 + 
+                    -0.5*((dec_cube-cen_dec)/sig_dec)**2 + 
+                    -0.5*((v_cube-cen_v)/sig_v)**2 )
+
+data = data_gauss * u.K
+
+dra = (ra.max() - ra.min()) / len(ra)
+ddec = (dec.max() - dec.min()) / len(dec)
+
+dv = (v.max() - v.min()) / len(v)
+
+#we need these values defined, because they represent the conditions/dimensions of our hypothetical molecular cloud
+# i did not make up these values, i stole them from astropy tutorials but im sure you can define them as whatever...
+# the fuck you damn well please because it's not real, and the computer isn't aware of the limitations of reality
+# shit, that was poetic.
+
+lambda13 = 2.60076 * u.mm
+lambda18 = 2.73079 * u.mm
+#right here, the constants B and C (lambdas 13 and 18 respectively) are being defined in terms of their wavelength...
+#in the next cell, we redefine them by their frequency rather than the wavelength and you use the fancy astropy...
+#equivilancies tool to do that
+
+nu13 = lambda13.to(u.Hz, equivalencies=u.spectral())
+nu18 = lambda18.to(u.Hz, equivalencies=u.spectral())
+#yay there are our handy frequency measurements right there
+#remember, frequency is a measurement of how many times something happens per second. And it's measured in Hz (Hertz)
+#yes, i did write that because you are completely stupid. You're welcome.
+
+A13 = 7.4e-8 / u.s
+A18 = 8.8e-8 / u.s
+#look here are the Einstein coefficients of the constants B and C. Rad.
+
+C = 3e14 * (nu18/nu13)**3 * (A13/A18) / (u.K * u.cm**2 * u.km *(1/u.s))
+C
+#^^ that right there calculates the C constant for the molecule we're dealing with (it's carbon monoxide btw)
+#yooo
+
+#(right around here in the jupyter notebook, it outputted 2.1792458x10^14 s/K km cm^2)
+
+#It's time to do the same for constant B. Strap in, my dudes.
+
+B = h * nu18 / (k_B * Tex)
+
+#aight so right up there, h is Planck's constant, k_B is Boltzmann's constant, and v is the emmition frequency
+#yes i know that v didn't actually show up in the script there I just thought you oughtta know.
+#oh and remember Tex was defined at the very beginning, and that is a temp measurement for our hypothetical cloud
+
+print('{0}\n{1}'.format(B, B.decompose()))
+
+#and then it outputted 0.2107488250629035 Hz s
+
+#all this bullshit below reveals the column density by summing over the velocity channels...
+#just like we did when we made the map, and velocity was defined on the side with the color bar instead of being...
+#on the x or y axes (is that axis plural idk i dont speak english)
+
+NCO = C * np.sum(data*dv, axis=2) / (1 - np.exp(-B))
+print("Peak CO column density: ")
+np.max(NCO)
+
+#then it printed "Peak CO column density: 8.5782087 x 10^15 1/cm^2"
+
+#yayyyy there it is
+#anyways now we're going to use the carbon monoxide and its total column density to get the full mass...
+#of the molecular cloud, as ya do. So, we don't actually use carbon monoxide as an indicator of cloud mass, the real...
+#thing we're looking for is H2 (hydrogen, which makes up basically fucking everything in space) but that shit...
+#is damn near invisable when its not in a star, so we cheat by tracing carbon monoxide and what im trying to get...
+#at here is that below, we're gonna do the column density thing again with hydrogen, using the standard ratio...
+#of hydrogen to carbon monoxide.
+
+H2_CO_ratio = 5.9e6
+NH2 = NCO * H2_CO_ratio
+print("Peak H2 column density: ")
+np.max(NH2)
+
+#by the way, none of this code is mine. I'm just going through astropy tutorials and trying to figure out what the...
+#fuck is going on. Yay.
+#also NH2 refers to hydrogen and NCO is carbon monoxide
+
+#and then the output is: "Peak H2 column density: 5.0611431×10221cm2"
+
+#so you get the mass by multiplying your hydrogen column density by the mass of one singular hydrogen.
+#It's tiny. Hydrogens are smol.
+
+mH2 = 2 * 1.008 * u.Dalton  #aka atomic mass unit/amu
+rho = NH2 * mH2
+
+#so now, the last thing you need to do is factor in the total area, measured in units of deg^2. Yay.
+
+dap = dra * ddec
+print(dap)
+
+#it outputs "2.5e-05 deg2"
+
+#BUT WAIT the area you just measured in isn't even valid because space is 3D (surprise, suprise) and you have to...
+#account for the fact that depth is a thing that exists. Woo. So instead of measuring in physical units...
+#you need angular units.
+
+da = (dap * d**2).to(u.pc**2, equivalencies=u.dimensionless_angles())
+da
+
+#there, ain't that neat. Now the da is defined in terms of parsecs, which is much more appropriate for the scale...
+#and we just utilized the equivilancies tool once again to get around the problem of dimensionless angles. Rad.
+
+#it outputs: "0.00047596472pc2"
+
+#damn, i guess that isn't a lot of parsecs but whatever. Parsecs is a cool word. Parsecs. P A R S E C S.
+
+da.to(u.cm**2)
+
+#now we're changing it up again, so it's measured in centimeters. We couldn't have done that before, because we were...
+#still measuring in terms of physical units as opposed to angular units.
+
+#output is 4.5318534×1033cm2
+
+#oh boy that is a lot of centimeters.
+#and FINALLY, after going through all that horseshit, we can combine column density, mass, and area to get THIS:
+
+M = np.sum(rho * da)
+M.decompose().to(u.solMass)
+
+#output is 317.53818M(sun emoji)
+
+#That's how big the cloud is versus the sun. Heh. We're so tiny. Nothing like getting mindfucked on a wednesday.
+
